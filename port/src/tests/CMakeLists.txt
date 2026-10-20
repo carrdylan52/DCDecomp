@@ -32,3 +32,8 @@ gtest_discover_tests(darkcloud_tests
     DISCOVERY_MODE PRE_TEST
     TEST_FILTER PlatformClock.*
     PROPERTIES TIMEOUT ${DC_TEST_TIMEOUT} ENVIRONMENT "DC_TEST_FONT=${CMAKE_SOURCE_DIR}/tools/font/DarkCloudCompendium.ttf" RUN_SERIAL TRUE)
+
+# Dumps the real random-floor generator's grid for one map seed (not a test; build it by name).
+add_executable(randfloor_dump EXCLUDE_FROM_ALL randfloor_dump.cpp)
+set_target_properties(randfloor_dump PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
+dc_link_game(randfloor_dump)

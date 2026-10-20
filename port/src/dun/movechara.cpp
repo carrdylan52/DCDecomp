@@ -17,7 +17,14 @@
 #include "camera_port.hpp"
 #include "camera_zoom.hpp"
 #include "first_person_walk.hpp"
+#include "gameloop.hpp"
+#include "ridepod_walk.hpp"
+#include "ridepod_visual.hpp"
+#include "ridepod_combat.hpp"
+#include "ridepod_records.hpp"
+#include "../ixion_dc2_monster.hpp"
 #include "platform/input.hpp"
+#include "platform/clock.hpp"
 #include "camerafollow.hpp"
 #include "character.hpp"
 #include "clothread.hpp"
@@ -39,6 +46,7 @@
 #include "frameattr.hpp"
 #include "gamemode.hpp"
 #include "gamepad.hpp"
+#include "gamepad_port.hpp"
 #include "gameutil.hpp"
 #include "healeffect.hpp"
 #include "hit_machingun_effect.hpp"
@@ -206,6 +214,14 @@ extern s32 viewMode__2;
 
 namespace {
 
+bool RidepodMode() {
+#ifdef IXION_HAS_DC2_RIDEPOD
+    return RidepodEnabled();
+#else
+    return false;
+#endif
+}
+
 float CharaHeight(CUserStatus *status) {
     float chara_height[6] = {16.0f, 14.0f, 16.0f, 16.0f, 18.0f, 15.0f};
 
@@ -282,6 +298,22 @@ PORT_OVERRIDE void DunMoveChara() {
     }
 
     GamePad.Down(PAD_SELECT);
+
+    // Reuse DC1's eye-task collision/event path while keeping the body visible
+    // and the follow camera active. No donor movement also runs in PLAY.
+    const bool ridepod = RidepodMode() && selectMapNo == DUNGEON_DIVINE_BEAST_CAVE &&
+                         UserStatus->cur_chara == CHARA_TOAN && viewMode__2 == 0;
+#ifdef IXION_HAS_DC2_RIDEPOD
+    RidepodVisualActivate(ridepod && BtEventMode == 0);
+#endif
+    if (ridepod && gameTask == GAME_TASK_PLAY && !BtActStatus.action_on && !BtActStatus.action_busy) {
+        gameTask = GAME_TASK_EYE_CAMERA;
+        BtActStatus.player_visible = 1;
+    }
+
+#ifdef IXION_HAS_DC2_RIDEPOD
+    RidepodCombatFrame(ridepod);
+#endif
 
     switch (gameTask) {
         case GAME_TASK_PLAY:
@@ -2204,7 +2236,7 @@ PORT_OVERRIDE void DunMoveChara() {
 
             break;
         case GAME_TASK_EYE_CAMERA:
-            EyeCamera();
+            if (!ridepod) EyeCamera();
 
             if (GamePad.Down(PAD_START) != 0) {
                 exitMenuFlag = 1;
@@ -2232,9 +2264,38 @@ PORT_OVERRIDE void DunMoveChara() {
                 next_task = GAME_TASK_PLAY;
                 leaving = 0;
 
-                bool can_walk = FirstPersonDungeonKeyboardVelocity(velo__2, viewAngleH__2, BtActStatus,
-                    driveStepHold || CMonUnitHold, UserStatus->CheckLife() > 0, StatusErrCheck(AILMENT_GOO) != 0);
+                bool can_walk;
+#ifdef IXION_HAS_DC2_RIDEPOD
+                static ixdc2_robo_state robo{};
+                static ixdc2_robo_output robo_motion{};
+                static ixdc2_robo_clock robo_clock{};
+                ixdc2_robo_input robo_input{};
+                if (ridepod) {
+                    RidepodDungeonUpkeep(BtActStatus);
+                    sceVu0FVECTOR rotation;
+                    CharaMain.GetRotation(rotation);
+                    robo.yaw = std::remainder(rotation[1], TWO_PI);
+                    if (robo.yaw >= PI) robo.yaw -= TWO_PI;
+                    // Preserve calibrated stick signs; the donor owns world rotation.
+                    robo_input = {GamePad.GetLXf(), GamePad.GetLYf(), NowCamera__3->GetAngleH(), 0, 2, 4, 0};
+                    can_walk = RidepodDungeonHostVelocity(robo_input, robo, robo_motion, robo_clock,
+                        static_cast<float>(ClockTickRate()), velo__2, BtActStatus,
+                        driveStepHold || CMonUnitHold, UserStatus->CheckLife() > 0, PadMovementLocked());
+                    CharaMain.SetRotation(0, robo.yaw, 0);
+                    // R1 presentation uses Toan's verified DC1 run/walk/stand keys.
+                    BtActStatus.motion_no = robo_motion.motion == IXDC2_ROBO_RUN ? 1 :
+                                            robo_motion.motion == IXDC2_ROBO_WALK ? 2 : 0;
+                } else
+#endif
+                {
+                    can_walk = FirstPersonDungeonKeyboardVelocity(velo__2, viewAngleH__2, BtActStatus,
+                        driveStepHold || CMonUnitHold, UserStatus->CheckLife() > 0, StatusErrCheck(AILMENT_GOO) != 0);
+                }
                 NowMonstorUnit->MoveCheck(pos, velo__2, lockOnTargetFlag);
+#ifdef IXION_HAS_DC2_RIDEPOD
+                sceVu0FVECTOR collision_input;
+                sceVu0CopyVector(collision_input, velo__2);
+#endif
                 MoveCheckInfo info{};
                 sceVu0FVECTOR before;
                 sceVu0CopyVector(before, pos);
@@ -2243,6 +2304,15 @@ PORT_OVERRIDE void DunMoveChara() {
                 if (FirstPersonDungeonStep(*NowDngMap, fields, pos, velo__2, info, UserStatus->cur_chara == CHARA_OSMOND ? 8 : 1)) {
                     sceVu0SubVector(ref_off, pos, before);
                     veloOld[1] = velo__2[1];
+#ifdef IXION_HAS_DC2_RIDEPOD
+                    if (ridepod) {
+                        if (info.landed) robo.velocity[1] = 0;
+                        else if (robo_clock.stepped) robo.velocity[1] = ixdc2_robo_gravity(robo.velocity[1], 0);
+                        velo__2[1] = robo.velocity[1] * IXDC2_ROBO_DC1_SCALE * IXDC2_ROBO_LOGIC_HZ /
+                            static_cast<float>(ClockTickRate());
+                    }
+                    else
+#endif
                     velo__2[1] = info.landed ? 0.0f : std::max(-10.0f, velo__2[1] - 0.1f);
                     if (info.landed) {
                         BtActStatus.foot_sound = info.poly.attr.foot_sound;
@@ -2250,13 +2320,38 @@ PORT_OVERRIDE void DunMoveChara() {
                     }
                     if (info.ground_found) BtActStatus.ground_height = pos[1] - info.ground_point[1];
                     CharaMain.SetPosition(pos);
-                    sceVu0FVECTOR eye, look;
-                    NowCamera__3->GetPos(eye);
-                    NowCamera__3->GetRef(look);
-                    sceVu0AddVector(eye, eye, ref_off);
-                    sceVu0AddVector(look, look, ref_off);
-                    NowCamera__3->SetPos(eye);
-                    NowCamera__3->SetRef(look);
+#ifdef IXION_HAS_DC2_RIDEPOD
+                    if (ridepod) {
+                        RidepodCombatStep(pos,robo.yaw,robo_motion.motion,robo_clock.stepped,can_walk);
+                        std::fprintf(stderr, "ixdc2 ridepod frame=%lld stick=(%.5f,%.5f) camera=%.5f yaw=%.5f "
+                            "requested=(%.5f,%.5f,%.5f) collision_input=(%.5f,%.5f,%.5f) "
+                            "delta=(%.5f,%.5f,%.5f) pos=(%.5f,%.5f,%.5f) "
+                            "motion=%d allowed=%d landed=%d gravity=%.5f donor_tick=%d donor_steps=%llu leg_frame=%.5f visual=%d\n",
+                            static_cast<long long>(GameFrameCount()), robo_input.stick_x, robo_input.stick_y,
+                            robo_input.camera_yaw, robo.yaw, robo.velocity[0], robo.velocity[1], robo.velocity[2],
+                            collision_input[0], collision_input[1], collision_input[2],
+                            ref_off[0], ref_off[1], ref_off[2], pos[0], pos[1], pos[2],
+                            robo_motion.motion, can_walk, info.landed, velo__2[1], robo_clock.stepped,
+                            static_cast<unsigned long long>(robo_clock.steps),RidepodVisualLegFrame(),RidepodVisualReady());
+                        BtActStatus.player_visible = 1;
+                        // The eye task normally leaves FollowOff. R1 keeps the
+                        // visible Toan body and the ordinary DC1 follow target.
+                        NowCamera__3->FollowOn();
+                        NowCamera__3->SetFollow(pos[0] + 7.0f * ref_off[0],
+                            pos[1] + BtActStatus.camera_shake_offset + 6.0f + reference[1] + 2.0f * ref_off[1],
+                            pos[2] + 7.0f * ref_off[2]);
+                        autoCamTrial();
+                    }
+#endif
+                    if (!ridepod) {
+                        sceVu0FVECTOR eye, look;
+                        NowCamera__3->GetPos(eye);
+                        NowCamera__3->GetRef(look);
+                        sceVu0AddVector(eye, eye, ref_off);
+                        sceVu0AddVector(look, look, ref_off);
+                        NowCamera__3->SetPos(eye);
+                        NowCamera__3->SetRef(look);
+                    }
                     static float walked = 0.0f;
                     if (can_walk && info.landed && UserStatus->cur_chara != CHARA_OSMOND) {
                         walked += hypotf(ref_off[0], ref_off[2]);
@@ -2471,21 +2566,23 @@ PORT_OVERRIDE void DunMoveChara() {
                         leaving = 1;
                     }
 
-                    if (GamePad.Down(PAD_R2) != 0 || GamePad.Down(PAD_L1) != 0 || GamePad.Down(PadInput_NO) != 0 || leaving != 0) {
+                    if ((!ridepod && (GamePad.Down(PAD_R2) != 0 || GamePad.Down(PAD_L1) != 0 || GamePad.Down(PadInput_NO) != 0)) || leaving != 0) {
                         sceVu0FVECTOR chara_rot;
 
                         CharaMainHandViewFlag = 0;
                         NowCamera__3->FollowOn();
-                        NowCamera__3->SetHeight(oldCameraHeight);
-                        NowCamera__3->SetSpeed(1.0f);
-                        NowCamera__3->Step(1);
-                        NowCamera__3->SetSpeed(8.0f);
-                        CharaMain.GetRotation(chara_rot);
-                        chara_rot[1] = viewAngleH__2;
-                        CharaMain.SetRotation(chara_rot);
+                        if (!ridepod) {
+                            NowCamera__3->SetHeight(oldCameraHeight);
+                            NowCamera__3->SetSpeed(1.0f);
+                            NowCamera__3->Step(1);
+                            NowCamera__3->SetSpeed(8.0f);
+                            CharaMain.GetRotation(chara_rot);
+                            chara_rot[1] = viewAngleH__2;
+                            CharaMain.SetRotation(chara_rot);
+                            cameraAuto = cameraAutoOld;
+                        }
                         BtActStatus.player_visible = 1;
                         viewMode__2 = 0;
-                        cameraAuto = cameraAutoOld;
 
                         if (UserStatus->cur_chara == CHARA_XIAO) {
                             EquipReAttach(NowWeapon, 0);
@@ -2975,6 +3072,11 @@ PORT_OVERRIDE void DunMoveChara() {
         }
     }
 
+#ifdef IXION_HAS_DC2_RIDEPOD
+    // Start/menu/death/character/task transitions can happen inside the switch;
+    // retire before motionDrive can expire hits while monster simulation is held.
+    RidepodCombatFrame(ridepod);
+#endif
     motionDrive();
 }
 
@@ -3248,7 +3350,9 @@ PORT_OVERRIDE int BtCheckDamageProc() {
                     SndSePlay(SE_PLAYER_HIT, -1, 0);
                     BtActStatus.hud_shake_frames = 15;
                     setUnitAmbientAnime(160.0f, 1.0f, 255.0f, 0.0f, 0.0f);
+                    int donor_hp_before=UserStatus->hp[int(UserStatus->cur_chara)];
                     UserStatus->AddNowLife(UserStatus->cur_chara, -damage, 10.0f);
+                    ixdc2::dc1mon::PlayerHit(hit->owner,damage,donor_hp_before,UserStatus->hp[int(UserStatus->cur_chara)]);
 
                     float number_pos[4] = {0.0f, 0.0f, 0.0f, 1.0f};
 
@@ -3321,7 +3425,9 @@ PORT_OVERRIDE int BtCheckDamageProc() {
                     SndSePlay(SE_PLAYER_HIT, -1, 0);
                     BtActStatus.hud_shake_frames = 25;
                     setUnitAmbientAnime(80.0f, 1.0f, 255.0f, 0.0f, 0.0f);
+                    int donor_hp_before=UserStatus->hp[int(UserStatus->cur_chara)];
                     UserStatus->AddNowLife(UserStatus->cur_chara, -damage, 10.0f);
+                    ixdc2::dc1mon::PlayerHit(hit->owner,damage,donor_hp_before,UserStatus->hp[int(UserStatus->cur_chara)]);
 
                     if (NowColData->hit[hit_no].target_mask != 3) {
                         NowColData->active[hit_no] = 0;

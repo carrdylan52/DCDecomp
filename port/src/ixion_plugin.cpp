@@ -5,17 +5,23 @@
 #include "ixion_api.h"
 
 #include <cstdint>
+#include <vector>
 
 #include "character.hpp"
 #include "dun/gameloop.hpp"
 #include "editloop.hpp"
+#include "gamepad.hpp"
 #include "gameloop.hpp"
+#include "identity.hpp"
 #include "main.hpp"
 #include "mainselect.hpp"
 #include "platform/audio.hpp"
 #include "platform/clock.hpp"
 #include "platform/embed.hpp"
+#include "platform/firstrun.hpp"
+#include "platform/input.hpp"
 #include "platform/mouse.hpp"
+#include "platform/paths.hpp"
 #include "platform/window.hpp"
 #include "userstatus.hpp"
 
@@ -24,6 +30,8 @@ union SDL_Event;
 
 // main.cpp's run, which the standalone executable's main calls too.
 int RunDarkCloud(int argc, const char **argv);
+
+bool GameSceneReady();
 
 namespace {
 
@@ -38,14 +46,31 @@ bool PollEvent(void *, SDL_Event *event) {
 }
 
 bool Checkpoint(void *, int reason) {
-    return g_host.checkpoint != nullptr &&
-           g_host.checkpoint(g_host.user, kGameId, static_cast<std::uint32_t>(reason)) != 0;
+    const bool parked = g_host.checkpoint(g_host.user, kGameId, static_cast<std::uint32_t>(reason)) != 0;
+    if (parked) {
+        WindowPollEvents();
+        InputPoll();
+        // Two reads replace both current and previous cached retail samples; released input
+        // cannot produce one stale frame or a synthetic release/press edge on resume.
+        GamePad.UpDate();
+        GamePad.UpDate();
+    }
+    return parked;
+}
+
+int Preflight(int argc, char **argv) {
+    GameSetIdentity();
+    std::vector<const char *> args(argv, argv + argc);
+    args.push_back(nullptr);
+    PathsConsumeArgs(argc, args.data());
+    return FirstRunDataMissing(PathsDataRoot()) ? 1 : 0;
 }
 
 int Bind(const IxionHost *host) {
     if (host == nullptr || host->size < sizeof(IxionHost) || host->abi_version != IXION_ABI_VERSION) {
         return 1;
     }
+    if (!host->poll_event || !host->checkpoint) return 1;
     g_host = *host;
     g_bound = true;
     return 0;
@@ -63,7 +88,13 @@ int Run(int argc, char **argv) {
 }
 
 void Activate(int active) {
-    AudioOutputPause(active == 0);
+    if (!AudioOutputPause(active == 0)) {
+        if (g_host.log) g_host.log(g_host.user, kGameId, "audio pause/resume FAILED");
+    }
+    if (active != 0) {
+        InputResetTransient();
+        InputActivateDevices();
+    }
     // Capture is the game's while it is the visible one; giving it up on deactivation keeps the
     // cursor free for the other game's window.
     if (active != 0) {
@@ -84,6 +115,9 @@ int Inspect(IxionReceipt *out) {
     }
     // old_main_mode is the mode the current frame ran in; RunGame sets it before each frame.
     const int mode = old_main_mode;
+    out->scene_ready = GameSceneReady();
+    out->audio_paused = AudioOutputPaused();
+    out->audio_frames = AudioOutputRenderedFrames();
     out->game_id = kGameId;
     out->logic_frames = static_cast<std::uint64_t>(GameFrameCount());
     out->clock_ticks = static_cast<std::uint64_t>(ClockTickCount());
@@ -120,6 +154,7 @@ const IxionApi g_api = {
     .activate = Activate,
     .window = Window,
     .inspect = Inspect,
+    .preflight = Preflight,
 };
 
 } // namespace

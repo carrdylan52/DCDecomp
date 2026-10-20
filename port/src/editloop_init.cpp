@@ -69,6 +69,7 @@
 #include "weaponlevelup.hpp"
 #include "wind.hpp"
 #include "edit_in.hpp"
+#include "ixion_revgeo.hpp"
 
 // The bodies are retail's, which pass string literals as char *.
 #pragma clang diagnostic ignored "-Wwritable-strings"
@@ -200,6 +201,7 @@ PORT_OVERRIDE int EditInit(void *param) {
 
     if (interior_test == 0) {
         LoadEditMapData(EditMapInfo, map_path, MapNo);
+        ixion_revgeo::OnMapData(EditMapInfo, MapNo);
     } else {
         LoadEditMapData(EditMapInfo, "gedit/interior/mapinfo.cfg", MapNo);
         LoadFile("gedit/interior/interior.cfg", read_buffer, &size);
@@ -369,6 +371,7 @@ PORT_OVERRIDE int EditInit(void *param) {
             }
         }
 
+        ixion_revgeo::AfterLoad();
         EditPartsObjectOnOff();
     }
 

@@ -1,0 +1,26 @@
+{
+  "donor_commit": "87cf4efa4ed17c4f075a03a4efdbca0303cac670",
+  "snippets": [
+    {
+      "path": "ps2/src/dng_effect.cpp",
+      "start": 3677,
+      "end": 3727,
+      "blob": "1e3c31ed0ec820eec0439f0b26b17ee79b28f5db",
+      "sha256": "1eb82b201abb4d61436a3132a80413c4996a0b0c168e936f7e76d7a80aca1924"
+    },
+    {
+      "path": "ps2/src/actionchara.cpp",
+      "start": 1937,
+      "end": 2042,
+      "blob": "0c83ea75c38955a4b2960731e7222f509a2197a6",
+      "sha256": "60e8234c974c39aa46792cda0066c3d65376d6803550606a2a7fbd2e951edbc6"
+    }
+  ],
+  "math": {
+    "path": "port/src/mg_math.cpp",
+    "start": 246,
+    "end": 248,
+    "blob": "5bd16f81a4d01100588d5a07981353ecdbe8d7ba",
+    "adaptation": "sqrtf(x*x+y*y+z*z), scalar equivalent of vu0::Sqrt(squared_sum3)"
+  }
+}

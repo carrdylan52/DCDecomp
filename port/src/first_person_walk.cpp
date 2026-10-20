@@ -53,7 +53,7 @@ int FrameBound(CFrame *frame, int &visits, int depth = 0) {
 
 } // namespace
 
-bool FirstPersonDungeonStep(CDungeonMap &map, DRAN_MAP_FIELD_SET *fields, float *pos, float *velocity, MoveCheckInfo &info, int mode) {
+static bool DungeonQuery(CDungeonMap &map, DRAN_MAP_FIELD_SET *fields, float *pos, float *velocity, MoveCheckInfo &info, int mode, float *ray_hit) {
     CBoxVu0 box{};
     for (int i = 0; i < 3; ++i) {
         if (!std::isfinite(pos[i]) || !std::isfinite(velocity[i])) {
@@ -155,9 +155,26 @@ bool FirstPersonDungeonStep(CDungeonMap &map, DRAN_MAP_FIELD_SET *fields, float 
         }
     }
     sceVu0FVECTOR next;
+    if (ray_hit) {
+        sceVu0AddVector(next,pos,velocity);
+        next[3] = 1;
+        if (CheckHit(polys.data(),int(polys.size()),pos,next,ray_hit,1,mode) < 0)
+            sceVu0CopyVector(ray_hit,next);
+        return true;
+    }
     MoveCheck(pos, velocity, next, &info, polys.data(), int(polys.size()), mode);
     sceVu0CopyVector(pos, next);
     return true;
+}
+
+bool FirstPersonDungeonStep(CDungeonMap &map, DRAN_MAP_FIELD_SET *fields, float *pos, float *velocity, MoveCheckInfo &info, int mode) {
+    return DungeonQuery(map,fields,pos,velocity,info,mode,nullptr);
+}
+bool RidepodDungeonTrace(CDungeonMap &map, float *from, float *to, float *endpoint) {
+    sceVu0FVECTOR velocity;
+    sceVu0SubVector(velocity,to,from);
+    MoveCheckInfo info{};
+    return DungeonQuery(map,nullptr,from,velocity,info,1,endpoint);
 }
 
 bool FirstPersonDungeonKeyboardVelocity(float *velocity, float heading, const BT_ACT_STATUS &status, bool held, bool alive, bool slow) {

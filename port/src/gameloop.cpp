@@ -1,4 +1,5 @@
 #include "gameloop.hpp"
+#include "ixion_ledger.hpp"
 
 #include <algorithm>
 #include <charconv>
@@ -211,6 +212,7 @@ bool g_developer_return_pending = false;
 std::int64_t g_frame_budget = -1;
 std::int64_t g_frames;
 bool         g_stop;
+bool         g_scene_ready;
 
 // Retail's save_data and config_data are static in main.cpp, so the port
 // keeps its own; everything else reaches the save through SaveData.
@@ -664,6 +666,8 @@ void GameSetFrameBudget(std::int64_t frames) {
     g_frame_budget = frames;
 }
 
+bool GameSceneReady() { return g_scene_ready; }
+
 std::int64_t GameFrameCount() {
     return g_frames;
 }
@@ -907,6 +911,7 @@ int RunGame(int argc, char **argv) {
 
         // A save loaded since the last mode brought its own options.
         GameOptionsApply(ConfigGet().options);
+        g_scene_ready = false;
         ModeInit(title_ran, exist_data, skip_title);
 
         NextMapNo = -1;
@@ -925,6 +930,7 @@ int RunGame(int argc, char **argv) {
             if (FrameBoundaryStop()) {
                 return kExitOk;
             }
+            IxionLedgerApplyAtSafePoint();
             MGAdjustScreen(ConfigWords()[kConfigScreenX], ConfigWords()[kConfigScreenY]);
             ConfigWords()[kConfigGameClear] = GameClearFlag;
 
@@ -951,6 +957,7 @@ int RunGame(int argc, char **argv) {
             GamePad.UpDate();
             GamePad.VibrationEnable(ConfigWords()[kConfigVibrationOff] == 0);
             GamePad.Step();
+            g_scene_ready = true;
             MGEndFrame();
             ++g_frames;
             PresenceTick();

@@ -11,6 +11,7 @@
 #include <cstring>
 
 #include "boxvu0.hpp"
+#include "ixion_revgeo.hpp"
 #include "camera.hpp"
 #include "camera_port.hpp"
 #include "camera_zoom.hpp"
@@ -215,6 +216,7 @@ PORT_OVERRIDE int EdSetMapFlag(int flag_no, int value) {
  */
 PORT_OVERRIDE int EditLoop() {
     goto_return_menu = 0;
+    ixion_revgeo::Trace();
 
     // Pausing is a walking action: a cutscene/event must not open the pause menu over itself.
     // Retail clears the flag again in the event case, but gating the input here keeps the intent
@@ -1921,6 +1923,9 @@ PORT_OVERRIDE int LoadTexture() {
         map_blocks[entered].mipmap = EditMapInfo->images[image].number;
         TexManager.LoadTextureBlock(-1, map_blocks, read_buffer);
     }
+
+    // The Ixion reverse-Georama part's pictures enter while the manager's buffer is still open.
+    ixion_revgeo::EnterTextures();
 
     TexManager.buffer_size = TexManager.buffer_used;
     DataBuffer__2.Alloc((int) (TexManager.buffer + TexManager.buffer_size - buffer) + 16);

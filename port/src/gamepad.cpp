@@ -17,6 +17,9 @@ constexpr int kDebugButtonsModifier = PAD_SELECT | PAD_L2;
 static bool g_debug_menu_pressed = false;
 
 static int g_held_down = 0;
+static bool g_movement_locked = false;
+
+bool PadMovementLocked() { return g_movement_locked; }
 
 void PadHoldDown(int mask) {
     g_held_down = mask;
@@ -122,6 +125,7 @@ PORT_OVERRIDE int CGamePad::Down2(int mask) {
 
 PORT_OVERRIDE void CGamePad::KeyLock(int mask) {
     key_lock = mask;
+    g_movement_locked = mask != 0;
     InputSetMovementLocked(mask != 0);
 }
 

@@ -31,7 +31,8 @@ include(${KZ_ROOT}/cmake/KazarovPort.cmake)
 # Python runs ${KZ_ROOT}/scripts/port_override.py.
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 # Flatpak builds have no network: their single-file libraries are staged in audio_decoders/ and stb_truetype/; others fetch them.
-set(KZ_PORT_VENDOR_DIRS ${CMAKE_SOURCE_DIR}/audio_decoders ${CMAKE_SOURCE_DIR}/stb_truetype)
+set(DC_PORT_VENDOR_DIRS "" CACHE STRING "Additional local decoder/header directories for offline builds")
+set(KZ_PORT_VENDOR_DIRS ${DC_PORT_VENDOR_DIRS} ${CMAKE_SOURCE_DIR}/audio_decoders ${CMAKE_SOURCE_DIR}/stb_truetype)
 kz_port_host_library(dc_host)
 
 set(PS2_DIR ${CMAKE_SOURCE_DIR}/ps2/src)
@@ -285,6 +286,9 @@ if(IXION_BUILD_PLUGIN)
         LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
     dc_link_game(ixion_c1 MODULE)
     target_include_directories(ixion_c1 PRIVATE ${IXION_API_DIR})
+    add_executable(ixion_c1_smoke EXCLUDE_FROM_ALL tests/ixion_smoke.cpp ${PORT_DIR}/ixion_plugin.cpp)
+    dc_link_game(ixion_c1_smoke)
+    target_include_directories(ixion_c1_smoke PRIVATE ${IXION_API_DIR})
     # lang/ and glyphs/ are read from beside the host executable; the module's folder is the same one.
     add_dependencies(ixion_c1 dc_lang dc_glyphs)
     if(WIN32)
@@ -301,5 +305,16 @@ if(IXION_BUILD_PLUGIN)
                 $<TARGET_FILE_DIR:ixion_c1>
             COMMAND_EXPAND_LISTS
             VERBATIM)
+    endif()
+endif()
+
+# Reverse crossover: only the copied DC2 Ridepod handler closure, privately
+# compiled. The path is read for pinned provenance; no donor TU is compiled.
+set(IXION_DC2_SOURCE_DIR "" CACHE PATH "ChronicleTwo donor checkout for Ridepod provenance")
+if(IXION_DC2_SOURCE_DIR)
+    add_subdirectory(ixdc2)
+    ixdc2_check_binary(darkcloud)
+    if(TARGET ixion_c1)
+        ixdc2_check_binary(ixion_c1)
     endif()
 endif()

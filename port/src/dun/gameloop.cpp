@@ -1,4 +1,5 @@
 #include "dun/gameloop.hpp"
+#include "ridepod_visual.hpp"
 
 #include <libvu0.h>
 
@@ -255,9 +256,21 @@ PORT_OVERRIDE void DunMainDraw() {
         NowDngMap->DrawAtraBoll(atra_pos);
     }
 
+    // Without a verified Toan seat/pose, the opted-in Ridepod is the visible
+    // body. Keep DC1's monster shadows, but do not leave a floating Toan shadow.
+#ifdef IXION_HAS_DC2_RIDEPOD
+    int visible = BtActStatus.player_visible;
+    if (RidepodVisualReady()) BtActStatus.player_visible = 0;
     Draw_MainUnitShadow();
+    BtActStatus.player_visible = visible;
+#else
+    Draw_MainUnitShadow();
+#endif
 
     if (BtActStatus.player_visible != 0 && EdEventInfo.player_draw != 0) {
+#ifdef IXION_HAS_DC2_RIDEPOD
+        if (!RidepodVisualDraw())
+#endif
         Draw_MainUnit();
     }
 

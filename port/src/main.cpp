@@ -370,6 +370,7 @@ int Run(int argc, const char **argv) {
     argc = PathsConsumeArgs(argc, argv);
     g_options = ParseOptions(argc, argv);
     Options &options = g_options;
+    if (EmbedActive() && FirstRunDataMissing(PathsDataRoot())) return kExitNoData;
     FirstRunIfNoData(options.headless);
     if (options.jump == nullptr) {
         options.jump = std::getenv("DC_JUMP");
